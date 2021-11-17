@@ -1,7 +1,7 @@
 from itertools import product, chain
 from math import ceil
 from multiprocessing import Pool
-from random import choice, shuffle, seed, random, getrandbits
+from random import choice, shuffle, seed, getrandbits
 from time import perf_counter
 from typing import Tuple
 
@@ -176,36 +176,39 @@ class EvolutionaryAlgorithm:
 
         self.start_time = perf_counter()
 
-        with Pool(6) as pool:
-            population = self.init_pop(pool)
+        population = self.init_pop()
 
-            population = pool.map(self.calc_fitness, population)
-            population = sorted(population, key=lambda x: x.z)
-            solution = population[0]
+        population = map(self.calc_fitness, population)
+        population = sorted(population, key=lambda x: x.z)
+        solution = population[0]
 
-            while not self.end_condition():
-                logger.info(f'Generation: {self.current_generation}, goal: {solution.z}')
-                # choose better half to be parents
-                parents = population[:len(population) // 2]
-                # make random pairs
-                shuffle(parents)
-                parent_pairs = zip(parents[0::2], parents[1::2])
-                # generate offspring
-                offspring_pairs = pool.map(self.generate_offspring, parent_pairs)
-                offsprings = pool.map(self.calc_fitness, chain.from_iterable(offspring_pairs))
-                population.extend(offsprings)
-                population = sorted(population, key=lambda x: x.z)[:self.number_of_chromosomes]
-                best_chromosome = population[0]
+        while not self.end_condition():
+            logger.info(f'Generation: {self.current_generation}, goal: {solution.z}')
+            # choose better half to be parents
+            parents = population[:len(population) // 2]
+            # make random pairs
+            shuffle(parents)
+            parent_pairs = zip(parents[0::2], parents[1::2])
+            # generate offspring
+            offspring_pairs = map(self.generate_offspring, parent_pairs)
+            offsprings = map(self.calc_fitness, chain.from_iterable(offspring_pairs))
 
-                if best_chromosome.z < solution.z:
-                    solution = best_chromosome
-                    self.no_progress_gen = 0
-                else:
-                    self.no_progress_gen += 1
+            population.extend(offsprings)
+            population = sorted(population, key=lambda x: x.z)[:self.number_of_chromosomes]
+            best_chromosome = population[0]
 
-                self.current_generation += 1
+            if best_chromosome.z < solution.z:
+                solution = best_chromosome
+                self.no_progress_gen = 0
+            else:
+                self.no_progress_gen += 1
 
-            return solution
+            self.current_generation += 1
+
+            # TODO: mutacje
+
+        logger.info(f'Took {perf_counter() - self.start_time} seconds...')
+        return solution
 
     def calc_fitness(self, chromosome):
         chromosome.link_values = self.problem_instance.get_links_for_alloc(chromosome.allocation_pattern)
@@ -217,11 +220,11 @@ class EvolutionaryAlgorithm:
         chromosome.build_chromosome(self.problem_instance.all_solutions)
         return chromosome
 
-    def generate_chromosomes(self, pool):
-        return pool.map(self.prepare_chromosome, range(self.number_of_chromosomes))
+    def generate_chromosomes(self):
+        return list(map(self.prepare_chromosome, range(self.number_of_chromosomes)))
 
-    def init_pop(self, pool):
-        chromosomes = self.generate_chromosomes(pool)
+    def init_pop(self):
+        chromosomes = self.generate_chromosomes()
         shuffle(chromosomes)
         return chromosomes
 
@@ -262,6 +265,7 @@ class EvolutionaryAlgorithm:
 
 def main():
     input_path = 'networks/net12_2.xml'
+    # input_path = 'networks/net4.xml'
     algorithm_type = ['EA', 'BFA'][0]
     problem_type = ['DAP', 'DDAP'][1]
 
@@ -284,7 +288,7 @@ def main():
             max_generations=100,
             max_no_progress_gen=20,
             crossover_prob=0.6,
-            mutation_prob=0.03
+            mutation_prob=0.1
         )
     else:
         algorithm = None
