@@ -1,0 +1,8 @@
+*.pyc
+.idea
+*__pycache__
+venv
+out.txt
+history.txt
+EA*
+BFA*

@@ -6,9 +6,6 @@ class Path:
         self.id = _id
         self.link_ids = link_ids
 
-    def __repr__(self):
-        return f'{self.id=}, {self.link_ids=}'
-
 
 class Demand:
     def __init__(
@@ -24,9 +21,6 @@ class Demand:
         self.end_node = end_node
         self.volume = volume
         self.paths = paths
-
-    def __repr__(self):
-        return f'{self.id=}, {self.start_node=}, {self.end_node=}, {self.volume=}, {self.paths=}'
 
 
 class Link:
@@ -46,14 +40,8 @@ class Link:
         self.module_cost = module_cost
         self.link_module = link_module
 
-    def __repr__(self):
-        return f'{self.id=}, {self.start_node=}, {self.end_node=}, {self.number_of_modules=}, {self.module_cost=}, {self.link_module=} '
-
 
 class Network:
     def __init__(self, links: List[Link], demands: List[Demand]):
         self.links = links
         self.demands = demands
-
-    def __repr__(self):
-        return f'{self.links=}, {self.demands=}'

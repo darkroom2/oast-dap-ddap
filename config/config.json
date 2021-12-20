@@ -1,0 +1,14 @@
+{
+  "network_path": "networks/net4.xml",
+  "algorithm_type": "EA",
+  "problem_type": "DDAP",
+  "stop_criterion": "no_progress",
+  "seed": 123,
+  "pop": 1000,
+  "max_time": 60,
+  "max_mutations": 1000,
+  "max_generations": 100,
+  "max_no_progress_gen": 20,
+  "crossover_prob": 0.5,
+  "mutation_prob": 0.01
+}

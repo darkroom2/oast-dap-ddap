@@ -1,14 +1,16 @@
 from itertools import product, chain
+from json import loads, dumps
 from math import ceil
 from multiprocessing import Pool
-from random import choice, shuffle, seed, getrandbits
+from pathlib import Path as PathLib
+from random import choice, shuffle, seed, random, sample
 from time import perf_counter
 from typing import Tuple
 
 from lxml import etree
 
-from network import Path, Demand, Link, Network
-from utils import setup_logger
+from src.network import Path, Demand, Link, Network
+from src.utils import setup_logger
 
 logger = setup_logger()
 
@@ -56,19 +58,27 @@ class Chromosome:
         self.allocation_pattern = {}
         self.link_values = []
         self.z = float('inf')
-
-    def __repr__(self):
-        return f'{self.allocation_pattern=}'
+        self.genes = 0
 
     def add_gene(self, gene):
         self.allocation_pattern.update(gene)
+        self.genes += 1
 
     def build_chromosome(self, all_solutions):
         for solution in all_solutions:
             self.add_gene(choice(solution))
 
     def get_gene(self, gene_id):
-        return {key: value for key, value in self.allocation_pattern.items() if key[0] == gene_id}
+        return {key: value for key, value in self.allocation_pattern.items() if
+                key[0] == gene_id}
+
+    def mutate_gene(self, gene_number):
+        gene = self.get_gene(gene_number)
+        if len(gene) > 1:  # we cant mutate gene with only one value
+            flows = sample(list(gene), 2)
+            if self.allocation_pattern[flows[0]] > 0:
+                self.allocation_pattern[flows[0]] -= 1
+                self.allocation_pattern[flows[1]] += 1
 
 
 class Problem:
@@ -100,7 +110,8 @@ class Problem:
 
     def generate_all_valid_solutions(self):
         with Pool() as pool:
-            self.all_solutions = pool.map(self.get_valid_solutions_for_demand, self.network.demands)
+            self.all_solutions = pool.map(self.get_valid_solutions_for_demand,
+                                          self.network.demands)
 
     def get_links_for_alloc(self, allocation_pattern):
         raise NotImplementedError()
@@ -113,7 +124,8 @@ class DAP(Problem):
     def calculate_z(self, link_values):
         z = float('-inf')
         for link_id, link_load in enumerate(link_values):
-            _z = link_load - self.network.links[link_id].number_of_modules * self.network.links[link_id].link_module
+            _z = link_load - self.network.links[link_id].number_of_modules * \
+                 self.network.links[link_id].link_module
             if _z > z:
                 z = _z
         return z
@@ -154,14 +166,17 @@ class DDAP(Problem):
 
 
 class EvolutionaryAlgorithm:
-    def __init__(self, problem_instance: Problem, seed: int, number_of_chromosomes: int, max_time: int,
-                 max_generations: int, max_mutations: int, max_no_progress_gen: int, crossover_prob: float,
-                 mutation_prob: float
-                 ):
+    def __init__(self, problem_instance: Problem, seed: int,
+                 number_of_chromosomes: int, stop_criterion: str, max_time: int,
+                 max_generations: int, max_mutations: int,
+                 max_no_progress_gen: int, crossover_prob: float,
+                 mutation_prob: float):
         self.problem_instance = problem_instance
         self.seed = seed
         self.number_of_chromosomes = number_of_chromosomes
+        self.stop_criterion = stop_criterion
         self.current_generation = 0
+        self.mutations = 0
         self.start_time = 0
         self.no_progress_gen = 0
         self.max_time = max_time
@@ -183,7 +198,10 @@ class EvolutionaryAlgorithm:
         solution = population[0]
 
         while not self.end_condition():
-            logger.info(f'Generation: {self.current_generation}, goal: {solution.z}')
+            logger.info(
+                f'Generation: {self.current_generation}, goal: {solution.z}\n\t'
+                f'solution.link_values: {solution.link_values}\n\t'
+                f'solution.link_values: {solution.allocation_pattern}')
             # choose better half to be parents
             parents = population[:len(population) // 2]
             # make random pairs
@@ -191,10 +209,13 @@ class EvolutionaryAlgorithm:
             parent_pairs = zip(parents[0::2], parents[1::2])
             # generate offspring
             offspring_pairs = map(self.generate_offspring, parent_pairs)
-            offsprings = map(self.calc_fitness, chain.from_iterable(offspring_pairs))
+
+            offsprings = map(self.calc_fitness,
+                             chain.from_iterable(offspring_pairs))
 
             population.extend(offsprings)
-            population = sorted(population, key=lambda x: x.z)[:self.number_of_chromosomes]
+            population = sorted(population, key=lambda x: x.z)[
+                         :self.number_of_chromosomes]
             best_chromosome = population[0]
 
             if best_chromosome.z < solution.z:
@@ -205,13 +226,12 @@ class EvolutionaryAlgorithm:
 
             self.current_generation += 1
 
-            # TODO: mutacje
-
         logger.info(f'Took {perf_counter() - self.start_time} seconds...')
         return solution
 
     def calc_fitness(self, chromosome):
-        chromosome.link_values = self.problem_instance.get_links_for_alloc(chromosome.allocation_pattern)
+        chromosome.link_values = self.problem_instance.get_links_for_alloc(
+            chromosome.allocation_pattern)
         chromosome.z = self.problem_instance.calculate_z(chromosome.link_values)
         return chromosome
 
@@ -221,7 +241,8 @@ class EvolutionaryAlgorithm:
         return chromosome
 
     def generate_chromosomes(self):
-        return list(map(self.prepare_chromosome, range(self.number_of_chromosomes)))
+        return list(
+            map(self.prepare_chromosome, range(self.number_of_chromosomes)))
 
     def init_pop(self):
         chromosomes = self.generate_chromosomes()
@@ -229,21 +250,26 @@ class EvolutionaryAlgorithm:
         return chromosomes
 
     def end_condition(self):
-        if perf_counter() - self.start_time > self.max_time:
-            logger.info('Max time exceeded, stopping...')
-            return True
+        if self.stop_criterion == 'time':
+            if perf_counter() - self.start_time > self.max_time:
+                logger.info('Max time exceeded, stopping...')
+                return True
 
-        elif self.current_generation > self.max_generations:
-            logger.info('Max generations exceeded, stopping...')
-            return True
+        elif self.stop_criterion == 'max_gen':
+            if self.current_generation > self.max_generations:
+                logger.info('Max generations exceeded, stopping...')
+                return True
 
-        elif self.no_progress_gen > self.max_no_progress_gen:
-            logger.info('Max generations without progress exceeded, stopping...')
-            return True
+        elif self.stop_criterion == 'no_progress':
+            if self.no_progress_gen > self.max_no_progress_gen:
+                logger.info(
+                    'Max generations without progress exceeded, stopping...')
+                return True
 
-        elif self.max_mutations == 0:
-            logger.info('Max mutations performed exceeded, stopping...')
-            return True
+        elif self.stop_criterion == 'max_mut':
+            if self.max_mutations == 0:
+                logger.info('Max mutations performed exceeded, stopping...')
+                return True
 
         else:
             return False
@@ -253,48 +279,79 @@ class EvolutionaryAlgorithm:
         child_1 = Chromosome()
         child_2 = Chromosome()
 
+        # crossover
         for gene_id in range(1, len(self.problem_instance.network.demands) + 1):
-            if getrandbits(1):
+            if random() < self.crossover_prob:
                 child_1.add_gene(parent_1.get_gene(gene_id))
                 child_2.add_gene(parent_2.get_gene(gene_id))
             else:
                 child_1.add_gene(parent_2.get_gene(gene_id))
                 child_2.add_gene(parent_1.get_gene(gene_id))
+
+        # mutation
+        for child in [child_1, child_2]:
+            if random() < self.mutation_prob:
+                for i in range(child.genes):
+                    if random() < self.mutation_prob:
+                        child.mutate_gene(i + 1)
+                        self.mutations += 1
+
         return child_1, child_2
 
 
 def main():
-    input_path = 'networks/net12_2.xml'
-    # input_path = 'networks/net4.xml'
-    algorithm_type = ['EA', 'BFA'][0]
-    problem_type = ['DAP', 'DDAP'][1]
+    # Wyniki z AMPL:
+    # net4:
+    #   * DAP = -138
+    #   * DDAP = 13
+    # net12_1:
+    #   * DAP = -29
+    #   * DDAP = 26
+    # net12_2:
+    #   * DAP = 0
+    #   * DDAP = 32
 
-    network = parse_xml_network(input_path)
+    # WCZYTANIE PARAMETROW
+    config = loads(PathLib('config/config.json').read_bytes())
 
-    if problem_type == 'DAP':
+    # PARSOWANIE SIECI Z PLIKU DO OBIEKTU
+    network = parse_xml_network(config.get('network_path'))
+
+    # WYBOR PROBLEMU
+    if config.get('problem_type') == 'DAP':
         problem_instance = DAP(network)
     else:
         problem_instance = DDAP(network)
 
+    # GENEROWANIE WSZYSTKICH MOŻLIWYCH ROZWIĄZAŃ
     problem_instance.generate_all_valid_solutions()
 
-    if algorithm_type == 'EA':
+    # TODO: BRUTE FORCE ALGORITHM DO ZROBIENIA
+    if config.get('algorithm_type') == 'EA':
         algorithm = EvolutionaryAlgorithm(
             problem_instance=problem_instance,
-            seed=123,
-            number_of_chromosomes=1000,
-            max_time=300,
-            max_mutations=100,
-            max_generations=100,
-            max_no_progress_gen=20,
-            crossover_prob=0.6,
-            mutation_prob=0.1
+            seed=config.get('seed'),
+            number_of_chromosomes=config.get('pop'),
+            stop_criterion=config.get('stop_criterion'),
+            max_time=config.get('max_time'),
+            max_mutations=config.get('max_mutations'),
+            max_generations=config.get('max_generations'),
+            max_no_progress_gen=config.get('max_no_progress_gen'),
+            crossover_prob=config.get('crossover_prob'),
+            mutation_prob=config.get('mutation_prob')
         )
     else:
         algorithm = None
 
+    # ROZWIAZANIE
     solution = algorithm.compute()
-    logger.info(f'Solution: {solution.link_values}')
+    logger.info(f'Solution: {solution.link_values} for '
+                f'{config.get("problem_type")} / {config.get("network_path")}')
+
+    PathLib('result.json').write_text(
+        dumps({'link_values': solution.link_values,
+               'allocation_pattern': f'{solution.allocation_pattern}'}, indent=4)
+    )
 
 
 if __name__ == '__main__':
