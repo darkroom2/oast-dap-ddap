@@ -1,21 +1,16 @@
 {
     "fn_kosztu": -138,
     "iteracje": 0,
-    "czas_opt": 11.125991777000309,
+    "czas_opt": 11.072650086000067,
     "liczn_pop": 1000,
     "prawd_krzyz": 0.5,
     "prawd_mut": 0.01,
     "obciazenie": [
-        6,
-        6,
-        6,
-        6,
-        6,
-        6,
-        6,
-        6,
-        6,
-        6
+        12,
+        12,
+        12,
+        12,
+        12
     ],
     "wymiary": [
         6,

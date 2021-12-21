@@ -388,6 +388,9 @@ def main():
 
     curr_gen = algorithm.current_generation if algorithm_type == 'EA' else 0
 
+    obciazenie = [elem * network.links[0].link_module for elem in
+                  solution.link_values]
+
     res = {
         'fn_kosztu': solution.z,
         'iteracje': curr_gen,
@@ -395,7 +398,7 @@ def main():
         'liczn_pop': config.get('pop'),
         'prawd_krzyz': config.get('crossover_prob'),
         'prawd_mut': config.get('mutation_prob'),
-        'obciazenie': solution.link_values * network.links[0].link_module,
+        'obciazenie': obciazenie,
         'wymiary': solution.link_values,
         'rozklad_zapotrz': f'{solution.allocation_pattern}'
     }
