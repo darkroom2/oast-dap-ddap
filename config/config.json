@@ -3,7 +3,7 @@
   "algorithm_type": "EA",
   "problem_type": "DDAP",
   "stop_criterion": "no_progress",
-  "seed": 123,
+  "seed": 79356,
   "pop": 1000,
   "max_time": 60,
   "max_mutations": 1000,

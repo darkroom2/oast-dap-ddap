@@ -16,7 +16,7 @@ def setup_logger(level=INFO):
     console_handler.setFormatter(formatter)
     _logger.addHandler(console_handler)
 
-    file_handler = FileHandler('../simulation.log')
+    file_handler = FileHandler('simulation.log')
     file_handler.setFormatter(formatter)
     _logger.addHandler(file_handler)
 

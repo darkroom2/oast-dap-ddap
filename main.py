@@ -74,7 +74,7 @@ class Chromosome:
 
     def mutate_gene(self, gene_number):
         gene = self.get_gene(gene_number)
-        if len(gene) > 1:  # we cant mutate gene with only one value
+        if len(gene) > 1:
             flows = sample(list(gene), 2)
             if self.allocation_pattern[flows[0]] > 0:
                 self.allocation_pattern[flows[0]] -= 1
@@ -166,13 +166,13 @@ class DDAP(Problem):
 
 
 class EvolutionaryAlgorithm:
-    def __init__(self, problem_instance: Problem, seed: int,
+    def __init__(self, problem_instance: Problem, _seed: int,
                  number_of_chromosomes: int, stop_criterion: str, max_time: int,
                  max_generations: int, max_mutations: int,
                  max_no_progress_gen: int, crossover_prob: float,
                  mutation_prob: float):
         self.problem_instance = problem_instance
-        self.seed = seed
+        self.seed = _seed
         self.number_of_chromosomes = number_of_chromosomes
         self.stop_criterion = stop_criterion
         self.current_generation = 0
@@ -185,6 +185,7 @@ class EvolutionaryAlgorithm:
         self.max_no_progress_gen = max_no_progress_gen
         self.crossover_prob = crossover_prob
         self.mutation_prob = mutation_prob
+        self.elapsed_time = 0
 
     def compute(self):
         seed(self.seed)
@@ -225,8 +226,8 @@ class EvolutionaryAlgorithm:
                 self.no_progress_gen += 1
 
             self.current_generation += 1
-
-        logger.info(f'Took {perf_counter() - self.start_time} seconds...')
+        self.elapsed_time = perf_counter() - self.start_time
+        logger.info(f'Took {self.elapsed_time} seconds...')
         return solution
 
     def calc_fitness(self, chromosome):
@@ -299,6 +300,37 @@ class EvolutionaryAlgorithm:
         return child_1, child_2
 
 
+class BruteForceAlgorithm:
+    def __init__(self, problem_instance):
+        self.problem_instance = problem_instance
+        self.start_time = 0
+        self.elapsed_time = 0
+
+    def calc_fitness(self, chromosome):
+        chromosome.link_values = self.problem_instance.get_links_for_alloc(
+            chromosome.allocation_pattern)
+        chromosome.z = self.problem_instance.calculate_z(chromosome.link_values)
+        return chromosome
+
+    def compute(self):
+        start_time = perf_counter()
+        solutions = self.problem_instance.all_solutions
+
+        valid_solutions = map(self.make_solution, product(*solutions))
+        valid_solutions = map(self.calc_fitness, valid_solutions)
+        valid_solutions = sorted(valid_solutions, key=lambda x: x.z)
+        self.elapsed_time = perf_counter() - start_time
+        logger.info(f'Brute Force took: {self.elapsed_time} s.')
+        return valid_solutions[0]
+
+    @staticmethod
+    def make_solution(aloc_pattern: dict):
+        chromosome = Chromosome()
+        for value in aloc_pattern:
+            chromosome.add_gene(value)
+        return chromosome
+
+
 def main():
     # Wyniki z AMPL:
     # net4:
@@ -315,10 +347,12 @@ def main():
     config = loads(PathLib('config/config.json').read_bytes())
 
     # PARSOWANIE SIECI Z PLIKU DO OBIEKTU
-    network = parse_xml_network(config.get('network_path'))
-
+    network_path = PathLib(config.get('network_path'))
+    network = parse_xml_network(str(network_path.resolve()))
+    problem_type = config.get('problem_type')
+    algorithm_type = config.get('algorithm_type')
     # WYBOR PROBLEMU
-    if config.get('problem_type') == 'DAP':
+    if problem_type == 'DAP':
         problem_instance = DAP(network)
     else:
         problem_instance = DDAP(network)
@@ -327,10 +361,10 @@ def main():
     problem_instance.generate_all_valid_solutions()
 
     # TODO: BRUTE FORCE ALGORITHM DO ZROBIENIA
-    if config.get('algorithm_type') == 'EA':
+    if algorithm_type == 'EA':
         algorithm = EvolutionaryAlgorithm(
             problem_instance=problem_instance,
-            seed=config.get('seed'),
+            _seed=config.get('seed'),
             number_of_chromosomes=config.get('pop'),
             stop_criterion=config.get('stop_criterion'),
             max_time=config.get('max_time'),
@@ -341,17 +375,33 @@ def main():
             mutation_prob=config.get('mutation_prob')
         )
     else:
-        algorithm = None
+        algorithm = BruteForceAlgorithm(
+            problem_instance=problem_instance
+        )
 
     # ROZWIAZANIE
     solution = algorithm.compute()
-    logger.info(f'Solution: {solution.link_values} for '
-                f'{config.get("problem_type")} / {config.get("network_path")}')
+    logger.info(f'Solution:\n\t {solution.allocation_pattern}\n\twith link '
+                f'values: {solution.link_values}\n\tand cost: {solution.z} '
+                f'{problem_type} / {config.get("network_path")} using: '
+                f'{algorithm_type}')
 
-    PathLib('result.json').write_text(
-        dumps({'link_values': solution.link_values,
-               'allocation_pattern': f'{solution.allocation_pattern}'}, indent=4)
-    )
+    curr_gen = algorithm.current_generation if algorithm_type == 'EA' else 0
+
+    res = {
+        'fn_kosztu': solution.z,
+        'iteracje': curr_gen,
+        'czas_opt': algorithm.elapsed_time,
+        'liczn_pop': config.get('pop'),
+        'prawd_krzyz': config.get('crossover_prob'),
+        'prawd_mut': config.get('mutation_prob'),
+        'obciazenie': solution.link_values * network.links[0].link_module,
+        'wymiary': solution.link_values,
+        'rozklad_zapotrz': f'{solution.allocation_pattern}'
+    }
+
+    PathLib(f'results/{problem_type}_{algorithm_type}_{network_path.stem}_'
+            f'result.json').write_text(dumps(res, indent=4))
 
 
 if __name__ == '__main__':
