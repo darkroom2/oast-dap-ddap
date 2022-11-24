@@ -1,23 +1,19 @@
-from logging import getLogger, INFO, Formatter, StreamHandler, FileHandler
+from logging import getLogger, DEBUG, Formatter, StreamHandler
 
 
-def setup_logger(level=INFO):
+def setup_logger():
     """Configures logger with preset format."""
 
     _logger = getLogger()
-    _logger.setLevel(level)
+    _logger.setLevel(DEBUG)
 
     formatter = Formatter(
-        '%(asctime)s %(processName)s %(threadName)s - %(levelname)s - %('
-        'message)s '
+        '%(asctime)s %(processName)s %(threadName)s - %(levelname)s - %(message)s'
     )
 
     console_handler = StreamHandler()
     console_handler.setFormatter(formatter)
-    _logger.addHandler(console_handler)
 
-    file_handler = FileHandler('simulation.log')
-    file_handler.setFormatter(formatter)
-    _logger.addHandler(file_handler)
+    _logger.addHandler(console_handler)
 
     return _logger
